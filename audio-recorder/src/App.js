@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import axios from 'axios';
+import { organizeTranscription } from './gptIntegration';
 
 const ASSEMBLYAI_API_KEY = 'ae928180e355400cb40b89e3c69e3680'; // Replace with your AssemblyAI API key
 
@@ -19,6 +20,10 @@ function App() {
     const mediaRecorderRef = useRef(null);
     // Ref to store the audio data chunks
     const audioChunksRef = useRef([]);
+    // State to store the organized topics
+    const [organizedTopics, setOrganizedTopics] = useState('');
+    // State to track if summarizing is in progress
+    const [isSummarizing, setIsSummarizing] = useState(false);
 
     /**
      * Function to start recording audio.
@@ -55,6 +60,7 @@ function App() {
      * It stops the MediaRecorder and updates the state.
      */
     const stopRecording = () => {
+        console.log('Stopping recording...');
         mediaRecorderRef.current.stop();
         setIsRecording(false);
     };
@@ -81,6 +87,7 @@ function App() {
 
             const transcriptionResponse = await axios.post('https://api.assemblyai.com/v2/transcript', {
                 audio_url: audioUrl,
+                auto_highlights: true, // Request timestamps for each sentence
             }, {
                 headers: {
                     'authorization': ASSEMBLYAI_API_KEY,
@@ -92,7 +99,8 @@ function App() {
             console.log('Transcription requested. ID:', transcriptId);
 
             let transcriptionResult;
-            while (true) {
+            while (true) { 
+                console.log('Polling for transcription result...');
                 const resultResponse = await axios.get(`https://api.assemblyai.com/v2/transcript/${transcriptId}`, {
                     headers: {
                         'authorization': ASSEMBLYAI_API_KEY,
@@ -100,6 +108,8 @@ function App() {
                 });
 
                 transcriptionResult = resultResponse.data;
+
+                console.log('Transcription result status:', transcriptionResult.status);
 
                 if (transcriptionResult.status === 'completed') {
                     console.log('Transcription completed.');
@@ -114,10 +124,19 @@ function App() {
 
             setTranscription(transcriptionResult.text);
             console.log('Transcription result:', transcriptionResult.text);
+
+            // Start summarizing and organizing
+            setIsSummarizing(true);
+            console.log('Starting to organize transcription...');
+            const organizedResult = await organizeTranscription(transcriptionResult.text);
+            setOrganizedTopics(organizedResult);
+            console.log('Organized topics:', organizedResult);
         } catch (error) {
             console.error('Error transcribing audio:', error);
+            console.log('Error details:', error.response?.data);
         } finally {
             setIsTranscribing(false);
+            setIsSummarizing(false);
         }
     };
 
@@ -132,8 +151,14 @@ function App() {
             {audioURL && <audio controls src={audioURL}></audio>}
             {/* Loading indicator */}
             {isTranscribing && <p>Transcribing...</p>}
+            {isSummarizing && <p>Summarizing & Organizing...</p>}
             {/* Display transcription */}
             {transcription && <p>Transcription: {transcription}</p>}
+            {/* Display organized topics */}
+            {organizedTopics && <div>
+                <h2>Organized Topics</h2>
+                <pre>{organizedTopics}</pre>
+            </div>}
         </div>
     );
 }
