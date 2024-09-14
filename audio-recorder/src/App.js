@@ -81,6 +81,7 @@ function App() {
 
             const transcriptionResponse = await axios.post('https://api.assemblyai.com/v2/transcript', {
                 audio_url: audioUrl,
+                auto_highlights: true, // Request timestamps for each sentence
             }, {
                 headers: {
                     'authorization': ASSEMBLYAI_API_KEY,
@@ -112,8 +113,13 @@ function App() {
                 await new Promise((resolve) => setTimeout(resolve, 5000)); // Wait for 5 seconds before polling again
             }
 
-            setTranscription(transcriptionResult.text);
-            console.log('Transcription result:', transcriptionResult.text);
+            // Extract sentences with timestamps
+            const sentencesWithTimestamps = transcriptionResult.words.map(word => {
+                return `${word.start} - ${word.end}: ${word.text}`;
+            }).join('\n');
+
+            setTranscription(sentencesWithTimestamps);
+            console.log('Transcription result:', sentencesWithTimestamps);
         } catch (error) {
             console.error('Error transcribing audio:', error);
         } finally {
