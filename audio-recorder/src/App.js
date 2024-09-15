@@ -1,11 +1,10 @@
 import React, { useState, useRef } from 'react';
 import axios from 'axios';
+import { organizeTranscription } from './gptIntegration';
+import { extractAudioClips } from './audioClipEditor'; // Ensure this path is correct
 
 const ASSEMBLYAI_API_KEY = 'ae928180e355400cb40b89e3c69e3680'; // Replace with your AssemblyAI API key
 
-/**
- * App component that provides the main functionality for recording and playing audio.
- */
 function App() {
     // State to track if recording is in progress
     const [isRecording, setIsRecording] = useState(false);
@@ -19,11 +18,13 @@ function App() {
     const mediaRecorderRef = useRef(null);
     // Ref to store the audio data chunks
     const audioChunksRef = useRef([]);
+    // State to store the organized topics
+    const [organizedTopics, setOrganizedTopics] = useState([]);
+    // State to track if summarizing is in progress
+    const [isSummarizing, setIsSummarizing] = useState(false);
+    // State to store the audio clips
+    const [audioClips, setAudioClips] = useState([]);
 
-    /**
-     * Function to start recording audio.
-     * It requests access to the user's microphone and initializes the MediaRecorder.
-     */
     const startRecording = async () => {
         console.log('Requesting microphone access...');
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -50,19 +51,12 @@ function App() {
         console.log('Recording started.');
     };
 
-    /**
-     * Function to stop recording audio.
-     * It stops the MediaRecorder and updates the state.
-     */
     const stopRecording = () => {
+        console.log('Stopping recording...');
         mediaRecorderRef.current.stop();
         setIsRecording(false);
     };
 
-    /**
-     * Function to upload audio to AssemblyAI and get the transcription.
-     * @param {Blob} audioBlob - The recorded audio blob.
-     */
     const transcribeAudio = async (audioBlob) => {
         setIsTranscribing(true);
         setTranscription('');
@@ -81,6 +75,7 @@ function App() {
 
             const transcriptionResponse = await axios.post('https://api.assemblyai.com/v2/transcript', {
                 audio_url: audioUrl,
+                auto_highlights: true, // Request timestamps for each sentence
             }, {
                 headers: {
                     'authorization': ASSEMBLYAI_API_KEY,
@@ -92,7 +87,8 @@ function App() {
             console.log('Transcription requested. ID:', transcriptId);
 
             let transcriptionResult;
-            while (true) {
+            while (true) { 
+                console.log('Polling for transcription result...');
                 const resultResponse = await axios.get(`https://api.assemblyai.com/v2/transcript/${transcriptId}`, {
                     headers: {
                         'authorization': ASSEMBLYAI_API_KEY,
@@ -100,6 +96,8 @@ function App() {
                 });
 
                 transcriptionResult = resultResponse.data;
+
+                console.log('Transcription result status:', transcriptionResult.status);
 
                 if (transcriptionResult.status === 'completed') {
                     console.log('Transcription completed.');
@@ -114,10 +112,34 @@ function App() {
 
             setTranscription(transcriptionResult.text);
             console.log('Transcription result:', transcriptionResult.text);
+
+            // Start summarizing and organizing
+            setIsSummarizing(true);
+            console.log('Starting to organize transcription...');
+            const organizedResult = await organizeTranscription(transcriptionResult.text);
+            console.log('Organized result:', organizedResult);
+
+            if (Array.isArray(organizedResult)) {
+                setOrganizedTopics(organizedResult);
+                console.log('Organized topics:', organizedResult);
+
+                // Extract audio clips based on timestamps
+                const clips = await extractAudioClips(audioBlob, organizedResult);
+                setAudioClips(clips);
+                console.log('Audio clips:', clips);
+            } else {
+                console.error('Organized result is not an array:', organizedResult);
+                // Handle the error gracefully, e.g., show a message to the user
+                alert('Failed to organize transcription. Please try again.');
+            }
         } catch (error) {
             console.error('Error transcribing audio:', error);
+            console.log('Error details:', error.response?.data);
+            // Handle the error gracefully, e.g., show a message to the user
+            alert('An error occurred while processing the transcription. Please try again.');
         } finally {
             setIsTranscribing(false);
+            setIsSummarizing(false);
         }
     };
 
@@ -132,8 +154,31 @@ function App() {
             {audioURL && <audio controls src={audioURL}></audio>}
             {/* Loading indicator */}
             {isTranscribing && <p>Transcribing...</p>}
+            {isSummarizing && <p>Summarizing & Organizing...</p>}
             {/* Display transcription */}
-            {transcription && <p>Transcription: {transcription}</p>}
+            {transcription && (
+                <div>
+                    <h2>Transcription</h2>
+                    <p>{transcription}</p>
+                </div>
+            )}
+            {/* Display organized topics and clips */}
+            {organizedTopics.length > 0 && (
+                <div>
+                    <h2>Organized Topics</h2>
+                    {organizedTopics.map((topic, index) => (
+                        <div key={index}>
+                            <h3>{topic.title}</h3>
+                            <p>Start: {topic.start}</p>
+                            <p>Stop: {topic.stop}</p>
+                            <p>{topic.content}</p>
+                            {audioClips[index] && (
+                                <audio controls src={audioClips[index]}></audio>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }
