@@ -1,6 +1,5 @@
 import React, { useState, useRef } from 'react';
 import axios from 'axios';
-import { organizeTranscription } from './gptIntegration';
 import { extractAudioClips } from './audioClipEditor'; // Ensure this path is correct
 
 const ASSEMBLYAI_API_KEY = 'ae928180e355400cb40b89e3c69e3680'; // Replace with your AssemblyAI API key
@@ -18,37 +17,40 @@ function App() {
     const mediaRecorderRef = useRef(null);
     // Ref to store the audio data chunks
     const audioChunksRef = useRef([]);
-    // State to store the organized topics
-    const [organizedTopics, setOrganizedTopics] = useState([]);
-    // State to track if summarizing is in progress
-    const [isSummarizing, setIsSummarizing] = useState(false);
     // State to store the audio clips
     const [audioClips, setAudioClips] = useState([]);
+    // State to store the detected topics
+    const [topics, setTopics] = useState([]);
 
     const startRecording = async () => {
         console.log('Requesting microphone access...');
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        console.log('Microphone access granted.');
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            console.log('Microphone access granted.');
 
-        mediaRecorderRef.current = new MediaRecorder(stream);
-        mediaRecorderRef.current.ondataavailable = (event) => {
-            audioChunksRef.current.push(event.data);
-        };
-        mediaRecorderRef.current.onstop = async () => {
-            console.log('Recording stopped.');
-            const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
-            const audioUrl = URL.createObjectURL(audioBlob);
-            setAudioURL(audioUrl);
-            audioChunksRef.current = [];
-            console.log('Audio URL created:', audioUrl);
+            mediaRecorderRef.current = new MediaRecorder(stream);
+            mediaRecorderRef.current.ondataavailable = (event) => {
+                audioChunksRef.current.push(event.data);
+            };
+            mediaRecorderRef.current.onstop = async () => {
+                console.log('Recording stopped.');
+                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+                const audioUrl = URL.createObjectURL(audioBlob);
+                setAudioURL(audioUrl);
+                audioChunksRef.current = [];
+                console.log('Audio URL created:', audioUrl);
 
-            // Start transcription
-            await transcribeAudio(audioBlob);
-        };
+                // Start transcription
+                await transcribeAudio(audioBlob);
+            };
 
-        mediaRecorderRef.current.start();
-        setIsRecording(true);
-        console.log('Recording started.');
+            mediaRecorderRef.current.start();
+            setIsRecording(true);
+            console.log('Recording started.');
+        } catch (error) {
+            console.error('Error accessing microphone:', error);
+            alert('Could not access your microphone. Please check permissions.');
+        }
     };
 
     const stopRecording = () => {
@@ -63,6 +65,7 @@ function App() {
         console.log('Uploading audio to AssemblyAI...');
 
         try {
+            // Step 1: Upload Audio
             const uploadResponse = await axios.post('https://api.assemblyai.com/v2/upload', audioBlob, {
                 headers: {
                     'authorization': ASSEMBLYAI_API_KEY,
@@ -73,9 +76,10 @@ function App() {
             const audioUrl = uploadResponse.data.upload_url;
             console.log('Audio uploaded. URL:', audioUrl);
 
+            // Step 2: Request Transcription with IAB Categories
             const transcriptionResponse = await axios.post('https://api.assemblyai.com/v2/transcript', {
                 audio_url: audioUrl,
-                auto_highlights: true, // Request timestamps for each sentence
+                iab_categories: true, // Correct parameter to request IAB categories
             }, {
                 headers: {
                     'authorization': ASSEMBLYAI_API_KEY,
@@ -86,6 +90,7 @@ function App() {
             const transcriptId = transcriptionResponse.data.id;
             console.log('Transcription requested. ID:', transcriptId);
 
+            // Step 3: Polling for Transcription Result
             let transcriptionResult;
             while (true) { 
                 console.log('Polling for transcription result...');
@@ -110,36 +115,34 @@ function App() {
                 await new Promise((resolve) => setTimeout(resolve, 5000)); // Wait for 5 seconds before polling again
             }
 
-            setTranscription(transcriptionResult.text);
-            console.log('Transcription result:', transcriptionResult.text);
+            // Log the full transcription result for debugging
+            console.log('Full transcription result:', transcriptionResult);
 
-            // Start summarizing and organizing
-            setIsSummarizing(true);
-            console.log('Starting to organize transcription...');
-            const organizedResult = await organizeTranscription(transcriptionResult.text);
-            console.log('Organized result:', organizedResult);
+            // Optionally, set the full transcription text
+            if (transcriptionResult.text) {
+                setTranscription(transcriptionResult.text);
+            }
 
-            if (Array.isArray(organizedResult)) {
-                setOrganizedTopics(organizedResult);
-                console.log('Organized topics:', organizedResult);
+            // Step 4: Process the IAB Categories Result
+            if (transcriptionResult.iab_categories_result && transcriptionResult.iab_categories_result.results) {
+                const detectedTopics = transcriptionResult.iab_categories_result.results;
+                console.log('Detected topics:', detectedTopics);
+                setTopics(detectedTopics);
 
                 // Extract audio clips based on timestamps
-                const clips = await extractAudioClips(audioBlob, organizedResult);
+                const clips = await extractAudioClips(audioBlob, detectedTopics);
                 setAudioClips(clips);
                 console.log('Audio clips:', clips);
             } else {
-                console.error('Organized result is not an array:', organizedResult);
-                // Handle the error gracefully, e.g., show a message to the user
-                alert('Failed to organize transcription. Please try again.');
+                throw new Error('Transcription result does not contain topic detection results.');
             }
         } catch (error) {
             console.error('Error transcribing audio:', error);
-            console.log('Error details:', error.response?.data);
+            console.error('Error details:', error.response?.data);
             // Handle the error gracefully, e.g., show a message to the user
             alert('An error occurred while processing the transcription. Please try again.');
         } finally {
             setIsTranscribing(false);
-            setIsSummarizing(false);
         }
     };
 
@@ -154,7 +157,6 @@ function App() {
             {audioURL && <audio controls src={audioURL}></audio>}
             {/* Loading indicator */}
             {isTranscribing && <p>Transcribing...</p>}
-            {isSummarizing && <p>Summarizing & Organizing...</p>}
             {/* Display transcription */}
             {transcription && (
                 <div>
@@ -162,19 +164,17 @@ function App() {
                     <p>{transcription}</p>
                 </div>
             )}
-            {/* Display organized topics and clips */}
-            {organizedTopics.length > 0 && (
+            {/* Display audio clips */}
+            {audioClips.length > 0 && (
                 <div>
-                    <h2>Organized Topics</h2>
-                    {organizedTopics.map((topic, index) => (
+                    <h2>Audio Clips by Topic</h2>
+                    {audioClips.map((clip, index) => (
                         <div key={index}>
-                            <h3>{topic.title}</h3>
-                            <p>Start: {topic.start}</p>
-                            <p>Stop: {topic.stop}</p>
-                            <p>{topic.content}</p>
-                            {audioClips[index] && (
-                                <audio controls src={audioClips[index]}></audio>
-                            )}
+                            <h3>Topic {index + 1}</h3>
+                            {/* Display Topic Text */}
+                            <p>{topics[index].text}</p>
+                            {/* Audio Player */}
+                            <audio controls src={clip}></audio>
                         </div>
                     ))}
                 </div>
