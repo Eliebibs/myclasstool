@@ -1,14 +1,134 @@
 /* Styles specific to the App component */
 .App {
     text-align: center;
+    font-family: 'Arial', sans-serif; /* Added a clean font */
+}
+
+header {
+    background: linear-gradient(45deg, #ff5722, #e64a19); /* Orange/red gradient background */
+    color: white; /* White text color */
+    padding: 20px; /* Padding around the text */
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1); /* Added a subtle text shadow */
+    font-size: 3em; /* Larger font size */
+    margin-bottom: 30px; /* More space below the header */
+    border-radius: 0; /* No rounded corners */
+    width: 100%; /* Full width */
+    box-sizing: border-box; /* Include padding in width */
 }
 
 button {
     margin: 20px;
-    padding: 10px 20px;
-    font-size: 16px;
+    padding: 15px 30px; /* Increased padding for a larger button */
+    font-size: 18px; /* Increased font size */
+    background-color: #ff5722; /* Changed to a vibrant orange background */
+    color: white; /* White text */
+    border: none; /* Remove border */
+    border-radius: 25px; /* More rounded corners */
+    cursor: pointer; /* Pointer cursor on hover */
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* Added a subtle shadow */
+    transition: background-color 0.3s, transform 0.3s; /* Smooth transition */
+}
+
+button:hover {
+    background-color: #e64a19; /* Darker orange on hover */
+    transform: scale(1.05); /* Slightly enlarge on hover */
+}
+
+h1 {
+    font-size: 3em; /* Larger font size */
+    color: white; /* White text color */
+    margin-bottom: 30px; /* More space below the header */
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1); /* Added a subtle text shadow */
+    background: linear-gradient(45deg, #ff5722, #e64a19); /* Orange/red gradient background */
+    padding: 20px; /* Padding around the text */
+    border-radius: 10px; /* Rounded corners */
+    display: inline-block; /* Center the header */
 }
 
 audio {
     margin-top: 20px;
+}
+
+/* New styles for topics */
+.topics-container {
+    display: flex;
+    overflow-x: auto; /* Enable horizontal scrolling */
+    padding: 20px;
+    gap: 20px; /* Space between topics */
+}
+
+.topic {
+    flex: 0 0 auto; /* Prevent topics from shrinking */
+    width: 300px; /* Fixed width for each topic */
+    border: 1px solid #ddd; /* Thin border */
+    border-radius: 10px; /* Rounded corners */
+    padding: 15px;
+    background-color: #fff; /* White background */
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); /* Subtle shadow */
+}
+
+.topic .gist {
+    font-size: 1.2em; /* Larger font size for gist */
+    font-weight: bold; /* Bold text */
+    margin-bottom: 10px; /* Space below gist */
+}
+
+.topic .headline {
+    font-size: 1em; /* Standard font size for headline */
+    font-weight: bold; /* Bold text */
+    margin-bottom: 10px; /* Space below headline */
+}
+
+.topic .summary {
+    font-size: 0.9em; /* Slightly smaller font size for summary */
+    color: #555; /* Dark grey text color */
+    margin-bottom: 10px; /* Space below summary */
+}
+
+.topic .audio-player {
+    margin-bottom: 10px; /* Space below audio player */
+}
+
+.topic hr {
+    border: none;
+    border-top: 1px solid #ddd; /* Thin line separator */
+    margin: 10px 0; /* Space around the separator */
+}
+
+/* Responsive design */
+@media (max-width: 600px) {
+    header {
+        font-size: 2em; /* Smaller font size on small screens */
+        padding: 15px; /* Adjust padding */
+    }
+
+    button {
+        font-size: 16px; /* Adjust button font size */
+        padding: 10px 20px; /* Adjust button padding */
+    }
+
+    .topic {
+        width: 100%; /* Full width on small screens */
+    }
+}
+
+.loading-spinner {
+    border: 8px solid #f3f3f3; /* Light grey */
+    border-top: 8px solid #ff5722; /* Orange */
+    border-radius: 50%;
+    width: 60px;
+    height: 60px;
+    animation: spin 1s linear infinite;
+    margin: 20px auto; /* Center the spinner */
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.recording-timer {
+    font-size: 1.5em;
+    color: #ff5722;
+    margin-top: 10px;
 }
