@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
-import { googleProvider } from './firebaseConfig';
+import { googleProvider, db, storage } from './firebaseConfig';
+import { doc, setDoc } from 'firebase/firestore';
+import { ref, uploadBytes } from 'firebase/storage';
 import './LoginSignup.css'; // Import the CSS file for styling
 
 function LoginSignup() {
@@ -23,11 +25,49 @@ function LoginSignup() {
         return () => unsubscribe();
     }, []);
 
+    const createUserDocument = async (user) => {
+        try {
+            await setDoc(doc(db, "users", user.uid), {
+                email: user.email
+            });
+            console.log("User document created");
+        } catch (error) {
+            console.error("Error creating user document: ", error);
+        }
+    };
+
+    const createUserStorageFolder = async (user) => {
+        try {
+            const storageRef = ref(storage, user.uid + '/placeholder.txt');
+            const placeholderFile = new Blob(['This is a placeholder file'], { type: 'text/plain' });
+            await uploadBytes(storageRef, placeholderFile);
+            console.log("User storage folder created");
+        } catch (error) {
+            console.error("Error creating user storage folder: ", error);
+        }
+    };
+
     const handleSignup = async () => {
         const auth = getAuth();
         try {
-            await createUserWithEmailAndPassword(auth, email, password);
+            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+            const user = userCredential.user;
+            await createUserDocument(user);
+            await createUserStorageFolder(user);
             alert('Sign up successful!');
+        } catch (error) {
+            setError(error.message);
+        }
+    };
+
+    const handleGoogleSignIn = async () => {
+        const auth = getAuth();
+        try {
+            const userCredential = await signInWithPopup(auth, googleProvider);
+            const user = userCredential.user;
+            await createUserDocument(user);
+            await createUserStorageFolder(user);
+            alert('Google Sign-In successful!');
         } catch (error) {
             setError(error.message);
         }
@@ -38,16 +78,6 @@ function LoginSignup() {
         try {
             await signInWithEmailAndPassword(auth, email, password);
             alert('Login successful!');
-        } catch (error) {
-            setError(error.message);
-        }
-    };
-
-    const handleGoogleSignIn = async () => {
-        const auth = getAuth();
-        try {
-            await signInWithPopup(auth, googleProvider);
-            alert('Google Sign-In successful!');
         } catch (error) {
             setError(error.message);
         }
