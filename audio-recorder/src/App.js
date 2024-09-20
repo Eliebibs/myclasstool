@@ -1,7 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { BrowserRouter as Router, Route, Link, Routes } from 'react-router-dom';
 import axios from 'axios';
 import { extractAudioClips, extractChapterClips } from './audioClipEditor'; // Ensure this path is correct
 import './App.css'; // Import the CSS file
+import LoginSignup from './LoginSignup'; // Import the new LoginSignup component
 
 const ASSEMBLYAI_API_KEY = 'ae928180e355400cb40b89e3c69e3680'; // Replace with your AssemblyAI API key
 
@@ -166,40 +168,51 @@ function App() {
     };
 
     return (
-        <div className="App">
-            <header>ClassCut</header>
-            {/* Button to start/stop recording */}
-            <button onClick={isRecording ? stopRecording : startRecording}>
-                {isRecording ? 'Stop' : 'Record'}
-            </button>
-            {/* Display recording timer */}
-            {isRecording && <div className="recording-timer">{formatTime(recordingTime)}</div>}
-            {/* Audio player to play the recorded audio */}
-            {audioURL && <audio controls src={audioURL}></audio>}
-            {/* Loading indicator */}
-            {isTranscribing && <div className="loading-spinner"></div>}
-            {/* Display transcription */}
-            {transcription && (
-                <div>
-                    <h2>Transcription</h2>
-                    <p>{transcription}</p>
-                    <button onClick={() => setDisplayMode('Chapters')}>Auto Chapters</button>
-                </div>
-            )}
-            {displayMode === 'Chapters' && autoChapters.length > 0 && (
-                <div className="topics-container">
-                    {autoChapters.map((chapter, index) => (
-                        <div key={index} className="topic">
-                            <h3 className="gist">Gist: {chapter.gist}</h3>
-                            <audio className="audio-player" controls src={audioClips[index]}></audio>
-                            <p className="headline"><strong>Headline:</strong> {chapter.headline}</p>
-                            <p className="summary"><strong>Summary:</strong> {chapter.summary}</p>
-                            <hr />
-                        </div>
-                    ))}
-                </div>
-            )}
-        </div>
+        <Router>
+            <Routes>
+                <Route path="/" element={
+                    <div className="App">
+                        <header>ClassCut</header>
+                        {/* Button to start/stop recording */}
+                        <button onClick={isRecording ? stopRecording : startRecording}>
+                            {isRecording ? 'Stop' : 'Record'}
+                        </button>
+                        {/* New button to navigate to login/signup page */}
+                        <Link to="/login-signup">
+                            <button>Login / Sign Up</button>
+                        </Link>
+                        {/* Display recording timer */}
+                        {isRecording && <div className="recording-timer">{formatTime(recordingTime)}</div>}
+                        {/* Audio player to play the recorded audio */}
+                        {audioURL && <audio controls src={audioURL}></audio>}
+                        {/* Loading indicator */}
+                        {isTranscribing && <div className="loading-spinner"></div>}
+                        {/* Display transcription */}
+                        {transcription && (
+                            <div>
+                                <h2>Transcription</h2>
+                                <p>{transcription}</p>
+                                <button onClick={() => setDisplayMode('Chapters')}>Auto Chapters</button>
+                            </div>
+                        )}
+                        {displayMode === 'Chapters' && autoChapters.length > 0 && (
+                            <div className="topics-container">
+                                {autoChapters.map((chapter, index) => (
+                                    <div key={index} className="topic">
+                                        <h3 className="gist">Gist: {chapter.gist}</h3>
+                                        <audio className="audio-player" controls src={audioClips[index]}></audio>
+                                        <p className="headline"><strong>Headline:</strong> {chapter.headline}</p>
+                                        <p className="summary"><strong>Summary:</strong> {chapter.summary}</p>
+                                        <hr />
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                } />
+                <Route path="/login-signup" element={<LoginSignup />} />
+            </Routes>
+        </Router>
     );
 }
 

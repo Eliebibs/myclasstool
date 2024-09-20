@@ -1,6 +1,17 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
 import App from './App';
+import { initializeApp } from 'firebase/app';
+import { firebaseConfig } from './firebaseConfig'; // Ensure this path is correct
 
-// Render the App component into the root div in index.html
-ReactDOM.render(<App />, document.getElementById('root'));
+console.log({ firebaseConfig }); // Add this line to debug
+
+// Initialize Firebase
+initializeApp(firebaseConfig);
+
+ReactDOM.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+  document.getElementById('root')
+);
