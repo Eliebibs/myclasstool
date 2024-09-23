@@ -82,66 +82,63 @@ export const extractChapterClips = async (audioBlob, chapters) => {
     console.log('Starting extractChapterClips function');
     console.log('Chapters:', chapters);
 
-    try {
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        const arrayBuffer = await audioBlob.arrayBuffer();
-        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    const arrayBuffer = await audioBlob.arrayBuffer();
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
-        console.log('Original audioBuffer duration:', audioBuffer.duration);
-        console.log('Original audioBuffer sampleRate:', audioBuffer.sampleRate);
-        console.log('Original audioBuffer numberOfChannels:', audioBuffer.numberOfChannels);
+    console.log('Original audioBuffer duration:', audioBuffer.duration);
+    console.log('Original audioBuffer sampleRate:', audioBuffer.sampleRate);
+    console.log('Original audioBuffer numberOfChannels:', audioBuffer.numberOfChannels);
 
-        const clips = await Promise.all(chapters.map(async (chapter, index) => {
-            const startTime = parseTimestamp(chapter.start); // Accessing the correct part of the object
-            const endTime = parseTimestamp(chapter.end);     // Accessing the correct part of the object
-            console.log(`Chapter #${index + 1}: Start Time - ${startTime}s, End Time - ${endTime}s`);
-
-            // Validate timestamps
-            if (startTime < 0 || endTime > audioBuffer.duration || startTime >= endTime) {
-                console.error(`Invalid timestamps for chapter #${index + 1}. Skipping this clip.`);
-                return null;
-            }
-
-            // Calculate sample indices
-            const startSample = Math.floor(startTime * audioBuffer.sampleRate);
-            const endSample = Math.floor(endTime * audioBuffer.sampleRate);
-            const frameCount = endSample - startSample;
-            console.log(`startSample: ${startSample}`);
-            console.log(`endSample: ${endSample}`);
-            console.log(`frameCount: ${frameCount}`);
-
-            // Create a new AudioBuffer for the clip
-            const clipBuffer = audioContext.createBuffer(
-                audioBuffer.numberOfChannels,
-                frameCount,
-                audioBuffer.sampleRate
-            );
-
-            // Copy channel data
-            for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
-                const channelData = audioBuffer.getChannelData(channel).subarray(startSample, endSample);
-                clipBuffer.copyToChannel(channelData, channel, 0);
-            }
-
-            // Convert AudioBuffer to Blob
-            const clipBlob = await bufferToBlob(clipBuffer, audioContext);
-            console.log(`Clip #${index + 1} blob size: ${clipBlob.size} bytes`);
-
-            // Create Object URL
-            const clipUrl = URL.createObjectURL(clipBlob);
-            console.log(`Clip #${index + 1} URL created: ${clipUrl}`);
-
-            return clipUrl;
-        }));
-
-        // Filter out any null values (invalid clips)
-        const validClips = clips.filter(clip => clip !== null);
-        console.log('All clips processed:', validClips);
-        return validClips;
-    } catch (error) {
-        console.error('Error extracting chapter clips:', error);
-        throw error;
+    // If there's only one chapter and it's longer than the audio, use the whole audio
+    if (chapters.length === 1 && chapters[0].end > audioBuffer.duration) {
+        chapters[0].start = 0;
+        chapters[0].end = audioBuffer.duration;
     }
+
+    const clips = await Promise.all(chapters.map(async (chapter, index) => {
+        console.log(`Chapter #${index + 1}: Start Time - ${chapter.start}s, End Time - ${chapter.end}s`);
+
+        const startSample = Math.max(0, Math.floor(chapter.start * audioBuffer.sampleRate));
+        const endSample = Math.min(audioBuffer.length, Math.floor(chapter.end * audioBuffer.sampleRate));
+        
+        // Ensure startSample is less than endSample
+        if (startSample >= endSample) {
+            console.error(`Invalid chapter timestamps: start (${chapter.start}) >= end (${chapter.end})`);
+            return null; // Skip this chapter
+        }
+
+        const frameCount = endSample - startSample;
+
+        console.log('startSample:', startSample);
+        console.log('endSample:', endSample);
+        console.log('frameCount:', frameCount);
+
+        const chapterBuffer = audioContext.createBuffer(
+            audioBuffer.numberOfChannels,
+            frameCount,
+            audioBuffer.sampleRate
+        );
+
+        for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
+            const channelData = audioBuffer.getChannelData(channel);
+            chapterBuffer.copyToChannel(channelData.subarray(startSample, endSample), channel);
+        }
+
+        const wavArrayBuffer = audioBufferToWav(chapterBuffer);
+        const wavBlob = new Blob([wavArrayBuffer], { type: 'audio/wav' });
+        console.log(`Clip #${index + 1} blob size:`, wavBlob.size, 'bytes');
+        console.log(`Clip #${index + 1} blob type:`, wavBlob.type);
+        console.log(`Clip #${index + 1} duration:`, chapterBuffer.duration);
+
+        return wavBlob;
+    }));
+
+    // Filter out null clips (invalid chapters)
+    const validClips = clips.filter(clip => clip !== null);
+
+    console.log('All valid clips processed:', validClips);
+    return validClips;
 };
 
 /**

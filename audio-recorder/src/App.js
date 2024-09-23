@@ -4,6 +4,10 @@ import axios from 'axios';
 import { extractAudioClips, extractChapterClips } from './audioClipEditor'; // Ensure this path is correct
 import './App.css'; // Import the CSS file
 import LoginSignup from './LoginSignup'; // Import the new LoginSignup component
+import { getAuth } from 'firebase/auth'; // Import Firebase Auth
+import { storage } from './firebaseConfig'; // Import Firebase Storage
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'; // Import Firebase Storage functions
+import { FirebaseError } from 'firebase/app'; // Import FirebaseError
 
 const ASSEMBLYAI_API_KEY = 'ae928180e355400cb40b89e3c69e3680'; // Replace with your AssemblyAI API key
 
@@ -43,6 +47,7 @@ function App() {
             mediaRecorderRef.current.onstop = async () => {
                 console.log('Recording stopped.');
                 const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+                console.log('Original audio MIME type:', audioBlob.type); // Log the MIME type of the original audio file
                 const audioUrl = URL.createObjectURL(audioBlob);
                 setAudioURL(audioUrl);
                 audioChunksRef.current = [];
@@ -76,6 +81,7 @@ function App() {
         setIsTranscribing(true);
         setTranscription('');
         console.log('Uploading audio to AssemblyAI...');
+        console.log('Original audio MIME type:', audioBlob.type);
 
         try {
             // Step 1: Upload Audio
@@ -146,8 +152,33 @@ function App() {
 
                 // Extract audio clips based on timestamps
                 const chapterClips = await extractChapterClips(audioBlob, chapters);
-                setAudioClips(chapterClips);
-                console.log('Chapter clips:', chapterClips);
+
+                if (chapterClips.length === 0) {
+                    throw new Error('No valid audio clips extracted');
+                }
+
+                // Get the current user ID
+                const auth = getAuth();
+                const user = auth.currentUser;
+                if (!user) {
+                    throw new Error('User not authenticated');
+                }
+                const userId = user.uid;
+
+                // Upload each audio clip to Firebase Storage
+                const uploadPromises = chapterClips.map(async (clip, index) => {
+                    console.log(`Processing clip ${index + 1} of ${chapterClips.length}`);
+                    console.log('Clip Blob:', clip);
+                    console.log('Clip Blob Size:', clip.size);
+                    return await uploadAudioClipToFirebase(clip, userId);
+                });
+
+                const clipUrls = await Promise.all(uploadPromises);
+                console.log('All audio clips uploaded:', clipUrls);
+
+                // Set the audio clips for playback
+                setAudioClips(clipUrls);
+
             } else {
                 throw new Error('Transcription result does not contain chapter detection results.');
             }
@@ -165,6 +196,99 @@ function App() {
         const minutes = Math.floor(seconds / 60);
         const remainingSeconds = seconds % 60;
         return `${minutes}:${remainingSeconds < 10 ? '0' : ''}${remainingSeconds}`;
+    };
+
+    const uploadAudioClipToFirebase = async (audioBlob, userId) => {
+        if (!(audioBlob instanceof Blob) || audioBlob.size === 0) {
+            throw new Error('Invalid audio blob');
+        }
+        const clipId = Math.random().toString(36).substring(2, 15);
+        const storageRef = ref(storage, `${userId}/${clipId}.wav`);
+
+        try {
+            console.log('Uploading audio clip to Firebase Storage...');
+            console.log('Audio Blob:', audioBlob);
+            console.log('Audio Blob Size:', audioBlob.size);
+            console.log('Audio Blob Type:', audioBlob.type);
+            console.log('User ID:', userId);
+            console.log('Clip ID:', clipId);
+
+            const metadata = {
+                contentType: 'audio/wav',
+            };
+
+            // Upload the audio blob with metadata
+            const uploadResult = await uploadBytes(storageRef, audioBlob, metadata);
+            console.log('Upload result:', uploadResult);
+
+            const downloadURL = await getDownloadURL(uploadResult.ref);
+            console.log('Download URL:', downloadURL);
+
+            return downloadURL;
+        } catch (error) {
+            console.error('Error uploading audio clip to Firebase:', error);
+            if (error instanceof FirebaseError) {
+                console.error('Firebase Error Code:', error.code);
+                console.error('Firebase Error Message:', error.message);
+            }
+            throw error;
+        }
+    };
+
+    const testUpload = async () => {
+        const auth = getAuth();
+        const user = auth.currentUser;
+        if (!user) {
+            console.error('User not authenticated');
+            return;
+        }
+        const userId = user.uid;
+        const storageRef = ref(storage, `${userId}/testfile.txt`);
+        const testBlob = new Blob(['Hello, world!'], { type: 'text/plain' });
+
+        try {
+            await uploadBytes(storageRef, testBlob);
+            console.log('Test file uploaded successfully.');
+        } catch (error) {
+            console.error('Error uploading test file:', error);
+        }
+    };
+
+    const testAudioPlayback = async (url) => {
+        try {
+            console.log('Testing audio playback for URL:', url);
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const contentType = response.headers.get('content-type');
+            console.log('Content-Type:', contentType);
+
+            const blob = await response.blob();
+            console.log('Downloaded blob size:', blob.size);
+            console.log('Downloaded blob type:', blob.type);
+
+            if (!blob.type.startsWith('audio/')) {
+                console.error('Invalid content type:', blob.type);
+                const text = await blob.text();
+                console.error('Response text:', text.substring(0, 200)); // Log first 200 characters
+                throw new Error(`Invalid content type: ${blob.type}`);
+            }
+
+            const audio = new Audio(URL.createObjectURL(blob));
+            audio.oncanplaythrough = () => {
+                console.log('Test audio can be played');
+                console.log('Audio duration:', audio.duration);
+            };
+            audio.onerror = (e) => {
+                console.error('Audio playback error:', e);
+                console.error('Audio error code:', audio.error.code);
+                console.error('Audio error message:', audio.error.message);
+            };
+            // Don't actually play the audio, just test if it can be played
+        } catch (error) {
+            console.error('Error testing audio playback:', error);
+        }
     };
 
     return (
@@ -208,6 +332,12 @@ function App() {
                                 ))}
                             </div>
                         )}
+                        {/* Add a button to test the upload */}
+                        <button onClick={testUpload}>Test Upload</button>
+                        {/* Add a button to test audio playback */}
+                        <button onClick={() => testAudioPlayback(/* pass the URL of a recently uploaded audio file */)}>
+                            Test Audio Playback
+                        </button>
                     </div>
                 } />
                 <Route path="/login-signup" element={<LoginSignup />} />
