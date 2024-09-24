@@ -1,13 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { BrowserRouter as Router, Route, Link, Routes } from 'react-router-dom';
 import axios from 'axios';
-import { extractAudioClips, extractChapterClips } from './audioClipEditor'; // Ensure this path is correct
-import './App.css'; // Import the CSS file
-import LoginSignup from './LoginSignup'; // Import the new LoginSignup component
-import { getAuth } from 'firebase/auth'; // Import Firebase Auth
-import { storage } from './firebaseConfig'; // Import Firebase Storage
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'; // Import Firebase Storage functions
-import { FirebaseError } from 'firebase/app'; // Import FirebaseError
+import { extractAudioClips, extractChapterClips } from './audioClipEditor';
+import './App.css';
+import LoginSignup from './LoginSignup';
+import MyClips from './MyClips'; // Import the new MyClips component
+import { getAuth } from 'firebase/auth';
+import { storage, db } from './firebaseConfig';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { doc, setDoc } from 'firebase/firestore';
+import { FirebaseError } from 'firebase/app';
 
 const ASSEMBLYAI_API_KEY = 'ae928180e355400cb40b89e3c69e3680'; // Replace with your AssemblyAI API key
 
@@ -170,7 +172,7 @@ function App() {
                     console.log(`Processing clip ${index + 1} of ${chapterClips.length}`);
                     console.log('Clip Blob:', clip);
                     console.log('Clip Blob Size:', clip.size);
-                    return await uploadAudioClipToFirebase(clip, userId);
+                    return await uploadAudioClipToFirebase(clip, userId, chapters[index]);
                 });
 
                 const clipUrls = await Promise.all(uploadPromises);
@@ -198,7 +200,7 @@ function App() {
         return `${minutes}:${remainingSeconds < 10 ? '0' : ''}${remainingSeconds}`;
     };
 
-    const uploadAudioClipToFirebase = async (audioBlob, userId) => {
+    const uploadAudioClipToFirebase = async (audioBlob, userId, chapter) => {
         if (!(audioBlob instanceof Blob) || audioBlob.size === 0) {
             throw new Error('Invalid audio blob');
         }
@@ -223,6 +225,19 @@ function App() {
 
             const downloadURL = await getDownloadURL(uploadResult.ref);
             console.log('Download URL:', downloadURL);
+
+            // Store clip metadata in Firestore
+            const clipData = {
+                gist: chapter.gist,
+                headline: chapter.headline,
+                summary: chapter.summary,
+                linkToClip: downloadURL,
+            };
+
+            const userDocRef = doc(db, 'users', userId);
+            const clipDocRef = doc(userDocRef, 'clips', clipId);
+            await setDoc(clipDocRef, clipData);
+            console.log('Clip metadata stored in Firestore:', clipData);
 
             return downloadURL;
         } catch (error) {
@@ -297,21 +312,18 @@ function App() {
                 <Route path="/" element={
                     <div className="App">
                         <header>ClassCut</header>
-                        {/* Button to start/stop recording */}
                         <button onClick={isRecording ? stopRecording : startRecording}>
                             {isRecording ? 'Stop' : 'Record'}
                         </button>
-                        {/* New button to navigate to login/signup page */}
                         <Link to="/login-signup">
                             <button>Login / Sign Up</button>
                         </Link>
-                        {/* Display recording timer */}
+                        <Link to="/my-clips">
+                            <button>My Clips</button>
+                        </Link>
                         {isRecording && <div className="recording-timer">{formatTime(recordingTime)}</div>}
-                        {/* Audio player to play the recorded audio */}
                         {audioURL && <audio controls src={audioURL}></audio>}
-                        {/* Loading indicator */}
                         {isTranscribing && <div className="loading-spinner"></div>}
-                        {/* Display transcription */}
                         {transcription && (
                             <div>
                                 <h2>Transcription</h2>
@@ -332,15 +344,10 @@ function App() {
                                 ))}
                             </div>
                         )}
-                        {/* Add a button to test the upload */}
-                        <button onClick={testUpload}>Test Upload</button>
-                        {/* Add a button to test audio playback */}
-                        <button onClick={() => testAudioPlayback(/* pass the URL of a recently uploaded audio file */)}>
-                            Test Audio Playback
-                        </button>
                     </div>
                 } />
                 <Route path="/login-signup" element={<LoginSignup />} />
+                <Route path="/my-clips" element={<MyClips />} />
             </Routes>
         </Router>
     );
