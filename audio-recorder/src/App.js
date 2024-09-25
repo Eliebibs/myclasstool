@@ -1,17 +1,17 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { BrowserRouter as Router, Route, Link, Routes } from 'react-router-dom';
 import axios from 'axios';
-import { extractAudioClips, extractChapterClips } from './audioClipEditor';
+import { extractChapterClips } from './audioClipEditor';
 import './App.css';
 import LoginSignup from './LoginSignup';
-import MyClips from './MyClips'; // Import the new MyClips component
+import MyClips from './MyClips';
 import { getAuth } from 'firebase/auth';
-import { storage, db } from './firebaseConfig';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { doc, setDoc } from 'firebase/firestore';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { getFirestore, doc, setDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { FirebaseError } from 'firebase/app';
+import SubjectSelector from './SubjectSelector';
 
-const ASSEMBLYAI_API_KEY = 'ae928180e355400cb40b89e3c69e3680'; // Replace with your AssemblyAI API key
+const ASSEMBLYAI_API_KEY = 'ae928180e355400cb40b89e3c69e3680';
 
 function App() {
     // State to track if recording is in progress
@@ -26,8 +26,6 @@ function App() {
     const mediaRecorderRef = useRef(null);
     // Ref to store the audio data chunks
     const audioChunksRef = useRef([]);
-    // State to store the audio clips
-    const [audioClips, setAudioClips] = useState([]);
     // State to store the auto chapters
     const [autoChapters, setAutoChapters] = useState([]);
     // State to track the display mode (IAB categories or auto chapters)
@@ -35,6 +33,8 @@ function App() {
     // State to track the recording time
     const [recordingTime, setRecordingTime] = useState(0);
     const recordingIntervalRef = useRef(null);
+    const [showSubjectSelector, setShowSubjectSelector] = useState(false);
+    const [lastRecordedAudioBlob, setLastRecordedAudioBlob] = useState(null);
 
     const startRecording = async () => {
         console.log('Requesting microphone access...');
@@ -77,119 +77,139 @@ function App() {
         mediaRecorderRef.current.stop();
         setIsRecording(false);
         clearInterval(recordingIntervalRef.current);
+        mediaRecorderRef.current.onstop = async (event) => {
+            console.log('Recording stopped.');
+            const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+            setLastRecordedAudioBlob(audioBlob);
+            setShowSubjectSelector(true);
+        };
     };
 
-    const transcribeAudio = async (audioBlob) => {
+    const handleSubjectSave = async (subject) => {
+        console.log('handleSubjectSave called with subject:', subject);
+        setShowSubjectSelector(false);
+
+        if (!subject || subject.trim() === '') {
+            console.error('Invalid subject name');
+            alert('Please enter a valid subject name');
+            return;
+        }
+
+        const db = getFirestore();
+        const auth = getAuth();
+        const user = auth.currentUser;
+        if (user) {
+            console.log('User authenticated, UID:', user.uid);
+            try {
+                // Start transcription with the selected subject
+                await transcribeAudio(lastRecordedAudioBlob, subject.trim());
+            } catch (error) {
+                console.error('Error in handleSubjectSave:', error);
+                alert('An error occurred while saving the recording. Please try again.');
+            }
+        } else {
+            console.error('User not authenticated');
+            alert('You must be logged in to save recordings');
+        }
+    };
+
+    const transcribeAudio = async (audioBlob, subject) => {
+        console.log('transcribeAudio called with subject:', subject);
         setIsTranscribing(true);
         setTranscription('');
-        console.log('Uploading audio to AssemblyAI...');
-        console.log('Original audio MIME type:', audioBlob.type);
+        console.log('Starting transcription process...');
 
         try {
-            // Step 1: Upload Audio
-            const uploadResponse = await axios.post('https://api.assemblyai.com/v2/upload', audioBlob, {
-                headers: {
-                    'authorization': ASSEMBLYAI_API_KEY,
-                    'content-type': 'application/octet-stream',
-                },
-            });
+            // Check if user is authenticated
+            const auth = getAuth();
+            const user = auth.currentUser;
+            if (!user) {
+                throw new Error('User not authenticated');
+            }
+            const userId = user.uid;
+
+            // Step 1: Upload the audio file to AssemblyAI
+            const uploadResponse = await axios.post('https://api.assemblyai.com/v2/upload',
+                audioBlob,
+                {
+                    headers: {
+                        'Content-Type': 'application/octet-stream',
+                        'Authorization': ASSEMBLYAI_API_KEY
+                    }
+                }
+            );
 
             const audioUrl = uploadResponse.data.upload_url;
-            console.log('Audio uploaded. URL:', audioUrl);
 
-            // Step 2: Request Transcription with IAB Categories and Auto Chapters
-            const transcriptionResponse = await axios.post('https://api.assemblyai.com/v2/transcript', {
-                audio_url: audioUrl,
-                iab_categories: true,
-                auto_chapters: true,
-                auto_highlights: true,
-            }, {
-                headers: {
-                    'authorization': ASSEMBLYAI_API_KEY,
-                    'content-type': 'application/json',
+            // Step 2: Start the transcription
+            const transcriptionResponse = await axios.post('https://api.assemblyai.com/v2/transcript',
+                {
+                    audio_url: audioUrl,
+                    auto_chapters: true
                 },
-            });
+                {
+                    headers: {
+                        'Authorization': ASSEMBLYAI_API_KEY,
+                        'Content-Type': 'application/json'
+                    }
+                }
+            );
 
             const transcriptId = transcriptionResponse.data.id;
-            console.log('Transcription requested. ID:', transcriptId);
 
-            // Step 3: Polling for Transcription Result
-            let transcriptionResult;
-            while (true) { 
-                console.log('Polling for transcription result...');
-                const resultResponse = await axios.get(`https://api.assemblyai.com/v2/transcript/${transcriptId}`, {
+            // Step 3: Poll for the transcription result
+            let transcriptResult;
+            while (true) {
+                const pollingResponse = await axios.get(`https://api.assemblyai.com/v2/transcript/${transcriptId}`, {
                     headers: {
-                        'authorization': ASSEMBLYAI_API_KEY,
-                    },
+                        'Authorization': ASSEMBLYAI_API_KEY
+                    }
                 });
 
-                transcriptionResult = resultResponse.data;
+                transcriptResult = pollingResponse.data;
 
-                console.log('Transcription result status:', transcriptionResult.status);
-
-                if (transcriptionResult.status === 'completed') {
-                    console.log('Transcription completed.');
+                if (transcriptResult.status === 'completed') {
                     break;
-                } else if (transcriptionResult.status === 'failed') {
-                    throw new Error('Transcription failed');
+                } else if (transcriptResult.status === 'error') {
+                    throw new Error(`Transcription error: ${transcriptResult.error}`);
                 }
 
-                console.log('Transcription in progress...');
-                await new Promise((resolve) => setTimeout(resolve, 5000)); // Wait for 5 seconds before polling again
+                await new Promise(resolve => setTimeout(resolve, 3000)); // Wait for 3 seconds before polling again
             }
 
-            // Log the full transcription result for debugging
-            console.log('Full transcription result:', transcriptionResult);
+            // Set the transcription
+            setTranscription(transcriptResult.text);
 
-            // Optionally, set the full transcription text
-            if (transcriptionResult.text) {
-                setTranscription(transcriptionResult.text);
-            }
+            // Extract chapters
+            const chapters = transcriptResult.chapters || [];
+            setAutoChapters(chapters);
 
-            // Step 5: Process the Auto Chapters Result
-            if (transcriptionResult.chapters) {
-                const chapters = transcriptionResult.chapters;
-                console.log('Detected chapters:', chapters);
-                setAutoChapters(chapters);
+            // Extract audio clips
+            const audioElement = new Audio(URL.createObjectURL(audioBlob));
+            await new Promise((resolve) => {
+                audioElement.onloadedmetadata = resolve;
+            });
+            const audioDuration = audioElement.duration;
 
-                // Extract audio clips based on timestamps
-                const chapterClips = await extractChapterClips(audioBlob, chapters);
+            const chapterClips = await extractChapterClips(audioBlob, chapters, audioDuration);
 
-                if (chapterClips.length === 0) {
-                    throw new Error('No valid audio clips extracted');
-                }
+            // Upload clips
+            const uploadPromises = chapterClips.map(async (clip, index) => {
+                console.log(`Processing clip ${index + 1} of ${chapterClips.length}`);
+                const chapterData = chapters[index] || {
+                    gist: 'No gist available',
+                    headline: 'No headline available',
+                    summary: 'No summary available'
+                };
+                return await uploadAudioClipToFirebase(clip, userId, chapterData, subject);
+            });
 
-                // Get the current user ID
-                const auth = getAuth();
-                const user = auth.currentUser;
-                if (!user) {
-                    throw new Error('User not authenticated');
-                }
-                const userId = user.uid;
+            const clipUrls = await Promise.all(uploadPromises);
+            console.log('All audio clips uploaded:', clipUrls);
 
-                // Upload each audio clip to Firebase Storage
-                const uploadPromises = chapterClips.map(async (clip, index) => {
-                    console.log(`Processing clip ${index + 1} of ${chapterClips.length}`);
-                    console.log('Clip Blob:', clip);
-                    console.log('Clip Blob Size:', clip.size);
-                    return await uploadAudioClipToFirebase(clip, userId, chapters[index]);
-                });
-
-                const clipUrls = await Promise.all(uploadPromises);
-                console.log('All audio clips uploaded:', clipUrls);
-
-                // Set the audio clips for playback
-                setAudioClips(clipUrls);
-
-            } else {
-                throw new Error('Transcription result does not contain chapter detection results.');
-            }
+            setIsTranscribing(false);
         } catch (error) {
-            console.error('Error transcribing audio:', error);
-            console.error('Error details:', error.response?.data);
-            // Handle the error gracefully, e.g., show a message to the user
-            alert('An error occurred while processing the transcription. Please try again.');
-        } finally {
+            console.error('Error in transcribeAudio:', error);
             setIsTranscribing(false);
         }
     };
@@ -200,109 +220,63 @@ function App() {
         return `${minutes}:${remainingSeconds < 10 ? '0' : ''}${remainingSeconds}`;
     };
 
-    const uploadAudioClipToFirebase = async (audioBlob, userId, chapter) => {
+    const uploadAudioClipToFirebase = async (audioBlob, userId, chapter, subject) => {
+        console.log('uploadAudioClipToFirebase called with:', { userId, subject, chapter });
         if (!(audioBlob instanceof Blob) || audioBlob.size === 0) {
             throw new Error('Invalid audio blob');
         }
+        if (!subject || subject.trim() === '') {
+            console.error('Invalid subject in uploadAudioClipToFirebase:', subject);
+            throw new Error('Invalid subject name');
+        }
         const clipId = Math.random().toString(36).substring(2, 15);
-        const storageRef = ref(storage, `${userId}/${clipId}.wav`);
+        const storage = getStorage();
+        const db = getFirestore();
 
         try {
-            console.log('Uploading audio clip to Firebase Storage...');
-            console.log('Audio Blob:', audioBlob);
-            console.log('Audio Blob Size:', audioBlob.size);
-            console.log('Audio Blob Type:', audioBlob.type);
+            console.log('Starting upload process...');
             console.log('User ID:', userId);
+            console.log('Subject:', subject);
             console.log('Clip ID:', clipId);
 
-            const metadata = {
-                contentType: 'audio/wav',
-            };
+            // Create the full path for the audio file
+            const filePath = `${userId}/${subject}/${clipId}.wav`;
+            const storageRef = ref(storage, filePath);
 
-            // Upload the audio blob with metadata
+            console.log('Uploading to Storage...');
+            const metadata = { contentType: 'audio/wav' };
             const uploadResult = await uploadBytes(storageRef, audioBlob, metadata);
-            console.log('Upload result:', uploadResult);
+            console.log('Upload to Storage successful:', uploadResult);
 
+            console.log('Getting download URL...');
             const downloadURL = await getDownloadURL(uploadResult.ref);
-            console.log('Download URL:', downloadURL);
+            console.log('Download URL obtained:', downloadURL);
 
-            // Store clip metadata in Firestore
+            // Prepare clip data with fallback values
             const clipData = {
-                gist: chapter.gist,
-                headline: chapter.headline,
-                summary: chapter.summary,
+                gist: chapter?.gist || 'No gist available',
+                headline: chapter?.headline || 'No headline available',
+                summary: chapter?.summary || 'No summary available',
                 linkToClip: downloadURL,
+                timestamp: serverTimestamp(),
             };
 
+            // Store in Firestore
+            console.log('Storing metadata in Firestore...');
             const userDocRef = doc(db, 'users', userId);
-            const clipDocRef = doc(userDocRef, 'clips', clipId);
+            const subjectCollectionRef = collection(userDocRef, subject);
+            const clipDocRef = doc(subjectCollectionRef, clipId);
             await setDoc(clipDocRef, clipData);
-            console.log('Clip metadata stored in Firestore:', clipData);
+            console.log('Metadata stored in Firestore successfully');
 
             return downloadURL;
         } catch (error) {
-            console.error('Error uploading audio clip to Firebase:', error);
+            console.error('Error in uploadAudioClipToFirebase:', error);
             if (error instanceof FirebaseError) {
                 console.error('Firebase Error Code:', error.code);
                 console.error('Firebase Error Message:', error.message);
             }
             throw error;
-        }
-    };
-
-    const testUpload = async () => {
-        const auth = getAuth();
-        const user = auth.currentUser;
-        if (!user) {
-            console.error('User not authenticated');
-            return;
-        }
-        const userId = user.uid;
-        const storageRef = ref(storage, `${userId}/testfile.txt`);
-        const testBlob = new Blob(['Hello, world!'], { type: 'text/plain' });
-
-        try {
-            await uploadBytes(storageRef, testBlob);
-            console.log('Test file uploaded successfully.');
-        } catch (error) {
-            console.error('Error uploading test file:', error);
-        }
-    };
-
-    const testAudioPlayback = async (url) => {
-        try {
-            console.log('Testing audio playback for URL:', url);
-            const response = await fetch(url);
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            const contentType = response.headers.get('content-type');
-            console.log('Content-Type:', contentType);
-
-            const blob = await response.blob();
-            console.log('Downloaded blob size:', blob.size);
-            console.log('Downloaded blob type:', blob.type);
-
-            if (!blob.type.startsWith('audio/')) {
-                console.error('Invalid content type:', blob.type);
-                const text = await blob.text();
-                console.error('Response text:', text.substring(0, 200)); // Log first 200 characters
-                throw new Error(`Invalid content type: ${blob.type}`);
-            }
-
-            const audio = new Audio(URL.createObjectURL(blob));
-            audio.oncanplaythrough = () => {
-                console.log('Test audio can be played');
-                console.log('Audio duration:', audio.duration);
-            };
-            audio.onerror = (e) => {
-                console.error('Audio playback error:', e);
-                console.error('Audio error code:', audio.error.code);
-                console.error('Audio error message:', audio.error.message);
-            };
-            // Don't actually play the audio, just test if it can be played
-        } catch (error) {
-            console.error('Error testing audio playback:', error);
         }
     };
 
@@ -336,13 +310,19 @@ function App() {
                                 {autoChapters.map((chapter, index) => (
                                     <div key={index} className="topic">
                                         <h3 className="gist">Gist: {chapter.gist}</h3>
-                                        <audio className="audio-player" controls src={audioClips[index]}></audio>
+                                        {/* Remove the audio player for now, as we don't have individual audioClips */}
                                         <p className="headline"><strong>Headline:</strong> {chapter.headline}</p>
                                         <p className="summary"><strong>Summary:</strong> {chapter.summary}</p>
                                         <hr />
                                     </div>
                                 ))}
                             </div>
+                        )}
+                        {showSubjectSelector && (
+                            <SubjectSelector 
+                                onClose={() => setShowSubjectSelector(false)}
+                                onSave={handleSubjectSave}
+                            />
                         )}
                     </div>
                 } />
