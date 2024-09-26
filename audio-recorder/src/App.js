@@ -7,7 +7,7 @@ import LoginSignup from './LoginSignup';
 import MyClips from './MyClips';
 import { getAuth } from 'firebase/auth';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { getFirestore, doc, setDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, collection, serverTimestamp, updateDoc, arrayUnion, getDoc } from 'firebase/firestore';
 import { FirebaseError } from 'firebase/app';
 import SubjectSelector from './SubjectSelector';
 
@@ -101,6 +101,21 @@ function App() {
         if (user) {
             console.log('User authenticated, UID:', user.uid);
             try {
+                const userDocRef = doc(db, 'users', user.uid);
+                const userDoc = await getDoc(userDocRef);
+                if (userDoc.exists()) {
+                    const userData = userDoc.data();
+                    const subjects = userData.subjects || [];
+                    if (!subjects.includes(subject.trim())) {
+                        await updateDoc(userDocRef, {
+                            subjects: arrayUnion(subject.trim())
+                        });
+                    }
+                } else {
+                    await setDoc(userDocRef, {
+                        subjects: [subject.trim()]
+                    });
+                }
                 // Start transcription with the selected subject
                 await transcribeAudio(lastRecordedAudioBlob, subject.trim());
             } catch (error) {
@@ -201,7 +216,9 @@ function App() {
                     headline: 'No headline available',
                     summary: 'No summary available'
                 };
-                return await uploadAudioClipToFirebase(clip, userId, chapterData, subject);
+                const clipUrl = await uploadAudioClipToFirebase(clip, userId, chapterData, subject);
+                chapterData.audioClipUrl = clipUrl; // Add this line
+                return clipUrl;
             });
 
             const clipUrls = await Promise.all(uploadPromises);
@@ -310,7 +327,7 @@ function App() {
                                 {autoChapters.map((chapter, index) => (
                                     <div key={index} className="topic">
                                         <h3 className="gist">Gist: {chapter.gist}</h3>
-                                        {/* Remove the audio player for now, as we don't have individual audioClips */}
+                                        <audio controls src={chapter.audioClipUrl}></audio> {/* Add this line */}
                                         <p className="headline"><strong>Headline:</strong> {chapter.headline}</p>
                                         <p className="summary"><strong>Summary:</strong> {chapter.summary}</p>
                                         <hr />

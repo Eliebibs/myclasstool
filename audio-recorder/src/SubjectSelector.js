@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getFirestore, collection, getDocs, doc } from 'firebase/firestore';
+import { getFirestore, doc, getDoc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import './SubjectSelector.css';
 
@@ -16,13 +16,18 @@ function SubjectSelector({ onClose, onSave }) {
                 try {
                     const db = getFirestore();
                     const userDocRef = doc(db, 'users', user.uid);
-                    const subjectsCollectionRef = collection(userDocRef, 'subjects');
-                    const subjectsSnapshot = await getDocs(subjectsCollectionRef);
-                    const subjectsList = subjectsSnapshot.docs.map(doc => doc.id);
-                    setSubjects(subjectsList);
-                    console.log('Fetched subjects:', subjectsList);
+                    const userDoc = await getDoc(userDocRef);
+                    if (userDoc.exists()) {
+                        const userData = userDoc.data();
+                        const subjectNames = userData.subjects || [];
+                        setSubjects(subjectNames);
+                        console.log('Fetched subjects:', subjectNames);
+                    } else {
+                        console.log('No user document found');
+                        setSubjects([]);
+                    }
                 } catch (error) {
-                    console.log('No subjects found or error fetching subjects:', error);
+                    console.log('Error fetching subjects:', error);
                     setSubjects([]);
                 }
             }
@@ -31,16 +36,34 @@ function SubjectSelector({ onClose, onSave }) {
         fetchSubjects();
     }, []);
 
-    const handleSave = () => {
+    const handleSave = async () => {
         const subjectToSave = selectedSubject || newSubject;
         console.log('Attempting to save subject:', subjectToSave);
         if (subjectToSave && subjectToSave.trim() !== '') {
-            console.log('Saving subject:', subjectToSave.trim());
-            onSave(subjectToSave.trim());
+            const trimmedSubject = subjectToSave.trim();
+            const auth = getAuth();
+            const user = auth.currentUser;
+            if (user) {
+                const db = getFirestore();
+                const userDocRef = doc(db, 'users', user.uid);
+                if (!subjects.includes(trimmedSubject)) {
+                    console.log('Saving new subject:', trimmedSubject);
+                    await updateDoc(userDocRef, {
+                        subjects: arrayUnion(trimmedSubject)
+                    });
+                    setSubjects([...subjects, trimmedSubject]);
+                }
+                onSave(trimmedSubject);
+            }
         } else {
             console.error('Attempted to save empty subject');
             alert('Please select or create a valid subject');
         }
+    };
+
+    const handleSelectChange = (e) => {
+        setSelectedSubject(e.target.value);
+        setNewSubject(''); // Clear the new subject input when an existing subject is selected
     };
 
     return (
@@ -50,7 +73,7 @@ function SubjectSelector({ onClose, onSave }) {
                 {subjects.length > 0 ? (
                     <select 
                         value={selectedSubject} 
-                        onChange={(e) => setSelectedSubject(e.target.value)}
+                        onChange={handleSelectChange}
                     >
                         <option value="">Select a subject</option>
                         {subjects.map((subject, index) => (
@@ -66,6 +89,7 @@ function SubjectSelector({ onClose, onSave }) {
                         placeholder="Create a new subject"
                         value={newSubject}
                         onChange={(e) => setNewSubject(e.target.value)}
+                        disabled={selectedSubject !== ''} // Disable input if an existing subject is selected
                     />
                 </div>
                 <div className="button-container">

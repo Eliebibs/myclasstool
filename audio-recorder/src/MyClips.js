@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { getAuth } from 'firebase/auth';
-import { db } from './firebaseConfig';
-import { collection, getDocs } from 'firebase/firestore';
+import { getFirestore, collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { Link } from 'react-router-dom';
 import './MyClips.css'; // Import the CSS file
 
 function MyClips() {
-    const [clips, setClips] = useState([]);
+    const [clips, setClips] = useState({});
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
@@ -22,16 +21,44 @@ function MyClips() {
             }
 
             try {
-                const userId = user.uid;
-                const clipsCollectionRef = collection(db, 'users', userId, 'clips');
-                const querySnapshot = await getDocs(clipsCollectionRef);
+                const db = getFirestore();
+                const userDocRef = doc(db, 'users', user.uid);
+                console.log('User Doc Ref:', userDocRef.path);
 
-                const userClips = querySnapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data()
-                }));
+                const userDoc = await getDoc(userDocRef);
+                if (!userDoc.exists()) {
+                    setError('User document does not exist');
+                    setLoading(false);
+                    return;
+                }
 
-                setClips(userClips);
+                const userData = userDoc.data();
+                const subjects = userData.subjects || [];
+                console.log('Subjects:', subjects);
+
+                const clipsBySubject = {};
+
+                for (const subject of subjects) {
+                    console.log('Processing subject:', subject);
+
+                    const clipsCollectionRef = collection(userDocRef, subject);
+                    console.log('Clips Collection Ref:', clipsCollectionRef.path);
+
+                    const querySnapshot = await getDocs(clipsCollectionRef);
+                    console.log('Query Snapshot for subject', subject, ':', querySnapshot.docs.map(doc => doc.id));
+
+                    const subjectClips = querySnapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }));
+
+                    console.log('Subject Clips:', subjectClips);
+
+                    clipsBySubject[subject] = subjectClips;
+                }
+
+                console.log('Clips by Subject:', clipsBySubject);
+                setClips(clipsBySubject);
                 setLoading(false);
             } catch (err) {
                 console.error('Error fetching clips:', err);
@@ -62,19 +89,24 @@ function MyClips() {
             <Link to="/">
                 <button>Back to Home</button>
             </Link>
-            {clips.length === 0 ? (
+            {Object.keys(clips).length === 0 ? (
                 <p className="no-clips-message">No clips found. Start recording to create some!</p>
             ) : (
-                <div className="clips-container">
-                    {clips.map((clip) => (
-                        <div key={clip.id} className="clip-item">
-                            <h3 className="clip-gist">{clip.gist}</h3>
-                            <audio className="audio-player" controls src={clip.linkToClip}></audio>
-                            <p className="clip-headline"><strong>Headline:</strong> {clip.headline}</p>
-                            <p className="clip-summary"><strong>Summary:</strong> {clip.summary}</p>
+                Object.keys(clips).map(subject => (
+                    <div key={subject} className="subject-section">
+                        <h2>{subject}</h2>
+                        <div className="clips-container">
+                            {clips[subject].map((clip) => (
+                                <div key={clip.id} className="clip-item">
+                                    <h3 className="clip-gist">{clip.gist}</h3>
+                                    <audio className="audio-player" controls src={clip.linkToClip}></audio>
+                                    <p className="clip-headline"><strong>Headline:</strong> {clip.headline}</p>
+                                    <p className="clip-summary"><strong>Summary:</strong> {clip.summary}</p>
+                                </div>
+                            ))}
                         </div>
-                    ))}
-                </div>
+                    </div>
+                ))
             )}
         </div>
     );
