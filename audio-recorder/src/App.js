@@ -227,6 +227,16 @@ function App() {
             const clipUrls = await Promise.all(uploadPromises);
             console.log('All audio clips uploaded:', clipUrls);
 
+            // Step 4: Send a request to the Lemur model via the proxy server
+            const lemurResponse = await axios.post('http://localhost:5001/api/lemur',
+                {
+                    audio_url: audioUrl,
+                    prompt: 'What is the subject of this audio?'
+                }
+            );
+
+            console.log('Lemur model response:', lemurResponse.data);
+
             setIsTranscribing(false);
         } catch (error) {
             console.error('Error in transcribeAudio:', error);
