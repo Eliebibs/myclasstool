@@ -78,67 +78,110 @@ export const extractAudioClips = async (audioBlob, topicsOrChapters) => {
  * @param {Array} chapters - Array of chapters with timestamp objects.
  * @returns {Promise<Array>} - Array of audio URLs for each clip.
  */
-export const extractChapterClips = async (audioBlob, chapters) => {
+export const extractChapterClips = async (audioBlob, chapters, audioDuration) => {
     console.log('Starting extractChapterClips function');
     console.log('Chapters:', chapters);
 
-    const arrayBuffer = await audioBlob.arrayBuffer();
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const arrayBuffer = await audioBlob.arrayBuffer();
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
     console.log('Original audioBuffer duration:', audioBuffer.duration);
     console.log('Original audioBuffer sampleRate:', audioBuffer.sampleRate);
     console.log('Original audioBuffer numberOfChannels:', audioBuffer.numberOfChannels);
 
-    // If there's only one chapter and it's longer than the audio, use the whole audio
-    if (chapters.length === 1 && chapters[0].end > audioBuffer.duration) {
-        chapters[0].start = 0;
-        chapters[0].end = audioBuffer.duration;
-    }
+    const clips = [];
 
-    const clips = await Promise.all(chapters.map(async (chapter, index) => {
-        console.log(`Chapter #${index + 1}: Start Time - ${chapter.start}s, End Time - ${chapter.end}s`);
+    for (let i = 0; i < chapters.length; i++) {
+        const chapter = chapters[i];
+        let startTime = chapter.start / 1000; // Convert milliseconds to seconds
+        let endTime = chapter.end / 1000; // Convert milliseconds to seconds
 
-        const startSample = Math.max(0, Math.floor(chapter.start * audioBuffer.sampleRate));
-        const endSample = Math.min(audioBuffer.length, Math.floor(chapter.end * audioBuffer.sampleRate));
-        
-        // Ensure startSample is less than endSample
-        if (startSample >= endSample) {
-            console.error(`Invalid chapter timestamps: start (${chapter.start}) >= end (${chapter.end})`);
-            return null; // Skip this chapter
+        console.log(`Chapter #${i + 1}: Start Time - ${startTime}s, End Time - ${endTime}s`);
+        console.log(`Data Types - Start Time: ${typeof startTime}, End Time: ${typeof endTime}`);
+
+        // Adjust timestamps to be within the actual audio duration
+        if (startTime < 0) startTime = 0;
+        if (endTime > audioDuration) endTime = audioDuration;
+
+        // Check for invalid timestamps
+        if (typeof startTime !== 'number' || typeof endTime !== 'number') {
+            console.error(`Invalid data types for chapter timestamps: start (${startTime}) and end (${endTime})`);
+            continue; // Skip invalid chapters
+        }
+        if (startTime >= endTime) {
+            console.error(`Invalid chapter timestamps: start (${startTime}) >= end (${endTime})`);
+            continue; // Skip invalid chapters
         }
 
+        const startSample = Math.floor(startTime * audioBuffer.sampleRate);
+        const endSample = Math.floor(endTime * audioBuffer.sampleRate);
         const frameCount = endSample - startSample;
 
         console.log('startSample:', startSample);
         console.log('endSample:', endSample);
         console.log('frameCount:', frameCount);
+        console.log('audioBuffer length:', audioBuffer.length);
 
-        const chapterBuffer = audioContext.createBuffer(
+        // Check for excessively large frameCount
+        if (frameCount > audioBuffer.length) {
+            console.error(`Excessively large frameCount: ${frameCount} (audioBuffer length: ${audioBuffer.length})`);
+            continue; // Skip chapters with excessively large frameCount
+        }
+
+        const clipBuffer = audioContext.createBuffer(
             audioBuffer.numberOfChannels,
             frameCount,
             audioBuffer.sampleRate
         );
 
         for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
-            const channelData = audioBuffer.getChannelData(channel);
-            chapterBuffer.copyToChannel(channelData.subarray(startSample, endSample), channel);
+            clipBuffer.copyToChannel(
+                audioBuffer.getChannelData(channel).subarray(startSample, endSample),
+                channel
+            );
         }
 
-        const wavArrayBuffer = audioBufferToWav(chapterBuffer);
-        const wavBlob = new Blob([wavArrayBuffer], { type: 'audio/wav' });
-        console.log(`Clip #${index + 1} blob size:`, wavBlob.size, 'bytes');
-        console.log(`Clip #${index + 1} blob type:`, wavBlob.type);
-        console.log(`Clip #${index + 1} duration:`, chapterBuffer.duration);
+        const clipBlob = await bufferToWaveBlob(clipBuffer);
+        if (!clipBlob) {
+            console.error(`Failed to create clipBlob for Chapter #${i + 1}`);
+            continue; // Skip if clipBlob is undefined
+        }
 
-        return wavBlob;
-    }));
+        console.log(`Clip #${i + 1} blob size: ${clipBlob.size} bytes`);
+        console.log(`Clip #${i + 1} blob type: ${clipBlob.type}`);
+        console.log(`Clip #${i + 1} duration: ${clipBuffer.duration}`);
 
-    // Filter out null clips (invalid chapters)
-    const validClips = clips.filter(clip => clip !== null);
+        clips.push(clipBlob);
+    }
 
-    console.log('All valid clips processed:', validClips);
-    return validClips;
+    console.log('All valid clips processed:', clips);
+    return clips;
+};
+
+const bufferToWaveBlob = async (buffer) => {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const offlineContext = new OfflineAudioContext(
+        buffer.numberOfChannels,
+        buffer.length,
+        buffer.sampleRate
+    );
+
+    const bufferSource = offlineContext.createBufferSource();
+    bufferSource.buffer = buffer;
+    bufferSource.connect(offlineContext.destination);
+    bufferSource.start();
+
+    const renderedBuffer = await offlineContext.startRendering();
+    const waveBlob = await audioBufferToWaveBlob(renderedBuffer);
+    return waveBlob;
+};
+
+const audioBufferToWaveBlob = (buffer) => {
+    // Convert AudioBuffer to WAV Blob
+    // Implementation details omitted for brevity
+    const wavArrayBuffer = audioBufferToWav(buffer);
+    return new Blob([wavArrayBuffer], { type: 'audio/wav' });
 };
 
 /**

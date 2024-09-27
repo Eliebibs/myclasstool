@@ -192,6 +192,9 @@ function App() {
                 await new Promise(resolve => setTimeout(resolve, 3000)); // Wait for 3 seconds before polling again
             }
 
+            // Log the full transcription result
+            console.log('Full transcription result:', transcriptResult);
+
             // Set the transcription
             setTranscription(transcriptResult.text);
 
