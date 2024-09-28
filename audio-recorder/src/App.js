@@ -5,6 +5,7 @@ import { extractChapterClips } from './audioClipEditor';
 import './App.css';
 import LoginSignup from './LoginSignup';
 import MyClips from './MyClips';
+import LandingPage from './LandingPage';
 import { getAuth } from 'firebase/auth';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getFirestore, doc, setDoc, collection, serverTimestamp, updateDoc, arrayUnion, getDoc } from 'firebase/firestore';
@@ -315,6 +316,9 @@ function App() {
                         <Link to="/my-clips">
                             <button>My Clips</button>
                         </Link>
+                        <Link to="/landing-page">
+                            <button>Landing Page</button>
+                        </Link>
                         {isRecording && <div className="recording-timer">{formatTime(recordingTime)}</div>}
                         {audioURL && <audio controls src={audioURL}></audio>}
                         {isTranscribing && <div className="loading-spinner"></div>}
@@ -348,6 +352,7 @@ function App() {
                 } />
                 <Route path="/login-signup" element={<LoginSignup />} />
                 <Route path="/my-clips" element={<MyClips />} />
+                <Route path="/landing-page" element={<LandingPage />} />
             </Routes>
         </Router>
     );
