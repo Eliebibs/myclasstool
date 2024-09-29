@@ -1,20 +1,24 @@
-import React, { useState, useRef } from 'react';
-import { BrowserRouter as Router, Route, Link, Routes } from 'react-router-dom';
+import React, { useState, useRef, useEffect } from 'react';
+import { BrowserRouter as Router, Route, Link, Routes, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { extractChapterClips } from './audioClipEditor';
 import './App.css';
 import LoginSignup from './LoginSignup';
+import Signup from './Signup';
 import MyClips from './MyClips';
 import LandingPage from './LandingPage';
-import { getAuth } from 'firebase/auth';
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getFirestore, doc, setDoc, collection, serverTimestamp, updateDoc, arrayUnion, getDoc } from 'firebase/firestore';
 import { FirebaseError } from 'firebase/app';
 import SubjectSelector from './SubjectSelector';
+import Account from './Account'; // New Account component (you'll need to create this)
 
 const ASSEMBLYAI_API_KEY = 'ae928180e355400cb40b89e3c69e3680';
 
 function App() {
+    const [user, setUser] = useState(null);
+    const [loading, setLoading] = useState(true);
     // State to track if recording is in progress
     const [isRecording, setIsRecording] = useState(false);
     // State to store the URL of the recorded audio
@@ -36,6 +40,35 @@ function App() {
     const recordingIntervalRef = useRef(null);
     const [showSubjectSelector, setShowSubjectSelector] = useState(false);
     const [lastRecordedAudioBlob, setLastRecordedAudioBlob] = useState(null);
+
+    useEffect(() => {
+        const auth = getAuth();
+        const unsubscribe = onAuthStateChanged(auth, (user) => {
+            setUser(user);
+            setLoading(false);
+        });
+
+        return () => unsubscribe();
+    }, []);
+
+    // Authenticated route component
+    const PrivateRoute = ({ children }) => {
+        if (loading) return <div>Loading...</div>;
+        return user ? children : <Navigate to="/login" />;
+    };
+
+    // Redirect component for authenticated users
+    const AuthRedirect = () => {
+        const location = useLocation();
+        
+        useEffect(() => {
+            if (user && location.pathname === '/') {
+                window.history.replaceState(null, '', '/home');
+            }
+        }, [user, location]);
+
+        return null;
+    };
 
     const startRecording = async () => {
         console.log('Requesting microphone access...');
@@ -301,58 +334,78 @@ function App() {
         }
     };
 
+    if (loading) {
+        return <div>Loading...</div>;
+    }
+
     return (
         <Router>
+            <AuthRedirect />
             <Routes>
-                <Route path="/" element={
-                    <div className="App">
-                        <header>ClassCut</header>
-                        <button onClick={isRecording ? stopRecording : startRecording}>
-                            {isRecording ? 'Stop' : 'Record'}
-                        </button>
-                        <Link to="/login-signup">
-                            <button>Login / Sign Up</button>
-                        </Link>
-                        <Link to="/my-clips">
-                            <button>My Clips</button>
-                        </Link>
-                        <Link to="/landing-page">
-                            <button>Landing Page</button>
-                        </Link>
-                        {isRecording && <div className="recording-timer">{formatTime(recordingTime)}</div>}
-                        {audioURL && <audio controls src={audioURL}></audio>}
-                        {isTranscribing && <div className="loading-spinner"></div>}
-                        {transcription && (
-                            <div>
-                                <h2>Transcription</h2>
-                                <p>{transcription}</p>
-                                <button onClick={() => setDisplayMode('Chapters')}>Auto Chapters</button>
+                <Route path="/" element={user ? <Navigate to="/home" /> : <LandingPage />} />
+                <Route path="/login" element={user ? <Navigate to="/home" /> : <LoginSignup />} />
+                <Route path="/signup" element={user ? <Navigate to="/home" /> : <Signup />} />
+                <Route path="/home" element={
+                    <PrivateRoute>
+                        <div className="App">
+                            <header className="app-header">
+                                <Link to="/" className="logo">ClassCut</Link>
+                                <div className="header-buttons">
+                                    <Link to="/account" className="header-button">Account</Link>
+                                    <Link to="/my-clips" className="header-button">My Clips</Link>
+                                </div>
+                            </header>
+                            <div className="sub-header-buttons">
+                                <a href="https://forms.gle/43TWyFBE1YQ8JZ8M7" target="_blank" rel="noopener noreferrer" className="sub-header-button">Report a Bug</a>
+                                <a href="https://forms.gle/F9Wf94RfaXmRpRC9A" target="_blank" rel="noopener noreferrer" className="sub-header-button">Give Feedback</a>
                             </div>
-                        )}
-                        {displayMode === 'Chapters' && autoChapters.length > 0 && (
-                            <div className="topics-container">
-                                {autoChapters.map((chapter, index) => (
-                                    <div key={index} className="topic">
-                                        <h3 className="gist">Gist: {chapter.gist}</h3>
-                                        <audio controls src={chapter.audioClipUrl}></audio> {/* Add this line */}
-                                        <p className="headline"><strong>Headline:</strong> {chapter.headline}</p>
-                                        <p className="summary"><strong>Summary:</strong> {chapter.summary}</p>
-                                        <hr />
-                                    </div>
-                                ))}
+                            <div className="record-container">
+                                <button className="record-button" onClick={isRecording ? stopRecording : startRecording}>
+                                    {isRecording ? 'Stop Recording' : 'Start Recording'}
+                                </button>
+                                {isRecording && <div className="recording-timer">{formatTime(recordingTime)}</div>}
                             </div>
-                        )}
-                        {showSubjectSelector && (
-                            <SubjectSelector 
-                                onClose={() => setShowSubjectSelector(false)}
-                                onSave={handleSubjectSave}
-                            />
-                        )}
-                    </div>
+                            {audioURL && <audio controls src={audioURL}></audio>}
+                            {isTranscribing && <div className="loading-spinner"></div>}
+                            {transcription && (
+                                <div>
+                                    <h2>Transcription</h2>
+                                    <p>{transcription}</p>
+                                    <button onClick={() => setDisplayMode('Chapters')}>Auto Chapters</button>
+                                </div>
+                            )}
+                            {displayMode === 'Chapters' && autoChapters.length > 0 && (
+                                <div className="topics-container">
+                                    {autoChapters.map((chapter, index) => (
+                                        <div key={index} className="topic">
+                                            <h3 className="gist">Gist: {chapter.gist}</h3>
+                                            <audio controls src={chapter.audioClipUrl}></audio>
+                                            <p className="headline"><strong>Headline:</strong> {chapter.headline}</p>
+                                            <p className="summary"><strong>Summary:</strong> {chapter.summary}</p>
+                                            <hr />
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            {showSubjectSelector && (
+                                <SubjectSelector 
+                                    onClose={() => setShowSubjectSelector(false)}
+                                    onSave={handleSubjectSave}
+                                />
+                            )}
+                        </div>
+                    </PrivateRoute>
                 } />
-                <Route path="/login-signup" element={<LoginSignup />} />
-                <Route path="/my-clips" element={<MyClips />} />
-                <Route path="/landing-page" element={<LandingPage />} />
+                <Route path="/my-clips" element={
+                    <PrivateRoute>
+                        <MyClips />
+                    </PrivateRoute>
+                } />
+                <Route path="/account" element={
+                    <PrivateRoute>
+                        <Account />
+                    </PrivateRoute>
+                } />
             </Routes>
         </Router>
     );

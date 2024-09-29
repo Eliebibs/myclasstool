@@ -130,5 +130,126 @@ audio {
 .recording-timer {
     font-size: 1.5em;
     color: #ff5722;
-    margin-top: 10px;
+    margin-top: 1rem;
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #ff5722;
+}
+
+.app-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 2rem;
+    background-color: #ff5722;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.logo {
+    color: white;
+    font-size: 1.5rem;
+    font-weight: bold;
+    text-decoration: none;
+    transition: opacity 0.3s ease;
+}
+
+.logo:hover {
+    opacity: 0.8;
+}
+
+.header-buttons {
+    display: flex;
+}
+
+.header-button {
+    margin-left: 1rem;
+    padding: 0.5rem 1rem;
+    text-decoration: none;
+    color: #333;
+    background-color: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 20px;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+}
+
+.header-button:hover {
+    background-color: #f0f0f0;
+    color: #ff5722;
+    border-color: #ff5722;
+}
+
+.record-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-top: 2rem; /* Add some padding at the top */
+}
+
+.record-button {
+    padding: 1.2rem 2.4rem;
+    font-size: 1.2rem;
+    background-color: #ff5722;
+    color: white;
+    border: none;
+    border-radius: 50px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    width: auto; /* Add this line */
+    max-width: 300px; /* Add this line */
+}
+
+.record-button:hover {
+    background-color: #e64a19;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 8px rgba(0,0,0,0.15);
+}
+
+.record-button:active {
+    transform: translateY(1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.recording-timer {
+    margin-top: 1rem;
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #ff5722;
+}
+
+.sub-header-buttons {
+    display: flex;
+    justify-content: flex-end;
+    padding: 0.5rem 2rem;
+    background-color: #f0f0f0;
+}
+
+.sub-header-button {
+    margin-left: 1rem;
+    padding: 0.5rem 1rem;
+    text-decoration: none;
+    color: white;
+    background-color: #2196F3; /* Blue color */
+    border: none;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    transition: all 0.3s ease;
+}
+
+.sub-header-button:hover {
+    background-color: #1976D2; /* Darker blue on hover */
+    transform: translateY(-2px);
+}
+
+@media (max-width: 600px) {
+    .sub-header-buttons {
+        flex-direction: column;
+        align-items: flex-end;
+    }
+
+    .sub-header-button {
+        margin-top: 0.5rem;
+        margin-left: 0;
+    }
 }

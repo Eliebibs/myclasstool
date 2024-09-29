@@ -1,22 +1,65 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { db } from './firebaseConfig';
+import { collection, addDoc } from 'firebase/firestore';
 import './LandingPage.css';
 
-const LandingPage = () => {
+const LandingPage = ({ user }) => {
+    const [email, setEmail] = useState('');
+    const [message, setMessage] = useState('');
+
+    const scrollToTop = () => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    const scrollToWaitlist = () => {
+        const waitlistSection = document.getElementById('waitlist');
+        waitlistSection.scrollIntoView({ behavior: 'smooth' });
+    };
+
+    const handleWaitlistSubmit = async (e) => {
+        e.preventDefault();
+        if (!email) {
+            setMessage('Please enter a valid email address.');
+            return;
+        }
+
+        try {
+            const docRef = await addDoc(collection(db, 'waitlist'), {
+                email: email
+            });
+            setMessage('Thank you for joining our waitlist!');
+            setEmail('');
+        } catch (error) {
+            console.error('Error adding to waitlist: ', error);
+            setMessage('An error occurred. Please try again later.');
+        }
+    };
+
     return (
         <div className="landing-page">
             <header className="header">
                 <div className="header-content">
-                    <div className="logo">ClassCut</div>
+                    <Link to="/" className="logo">ClassCut</Link>
                     <nav className="nav">
-                        <Link to="/">Home</Link>
-                        <Link to="/login-signup">Login</Link>
-                        <Link to="/my-clips">My Clips</Link>
+                        {user ? (
+                            <Link to="/home">Dashboard</Link>
+                        ) : (
+                            <a href="#" onClick={scrollToTop}>Home</a>
+                        )}
                         <a href="#features">Features</a>
                         <a href="#how-it-works">How It Works</a>
-                        <a href="#contact">Contact</a>
                     </nav>
-                    <button className="nav-cta">Try for Free</button>
+                    <div className="signup-section">
+                        {user ? (
+                            <Link to="/account" className="nav-cta">Account</Link>
+                        ) : (
+                            <>
+                                <span className="tester-code">Have a tester code?</span>
+                                <Link to="/signup" className="nav-cta">Sign Up</Link>
+                            </>
+                        )}
+                    </div>
                 </div>
             </header>
 
@@ -25,8 +68,7 @@ const LandingPage = () => {
                     <h1>Revolutionize Your<br />Note-Taking Experience</h1>
                     <p>Transform lengthy lectures into organized, topic-focused notes effortlessly.</p>
                     <div className="hero-cta">
-                        <button className="cta-button primary">Get Started</button>
-                        <button className="cta-button secondary">Learn More</button>
+                        <button className="cta-button primary" onClick={scrollToWaitlist}>Get Started</button>
                     </div>
                 </div>
             </section>
@@ -88,22 +130,24 @@ const LandingPage = () => {
                 </div>
             </section>
 
-            <section className="cta">
+            <section id="waitlist" className="cta">
                 <h2>Experience the Future of Note-Taking</h2>
                 <p>Join thousands of students revolutionizing their study habits.</p>
-                <form className="cta-form">
-                    <input type="email" placeholder="Enter your email" required />
+                <form className="cta-form" onSubmit={handleWaitlistSubmit}>
+                    <input 
+                        type="email" 
+                        placeholder="Enter your email" 
+                        required 
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                    />
                     <button type="submit">Join the Waiting List</button>
                 </form>
+                {message && <p className="message">{message}</p>}
             </section>
 
             <footer className="footer">
                 <div className="footer-content">
-                    <div className="footer-links">
-                        <a href="#privacy-policy">Privacy Policy</a>
-                        <a href="#terms-of-service">Terms of Service</a>
-                        <a href="#contact">Contact Us</a>
-                    </div>
                     <div className="social-media">
                         <a href="#" className="social-icon"><i className="fab fa-facebook"></i></a>
                         <a href="#" className="social-icon"><i className="fab fa-twitter"></i></a>

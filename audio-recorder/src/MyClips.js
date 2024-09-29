@@ -8,6 +8,7 @@ function MyClips() {
     const [clips, setClips] = useState({});
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [selectedSubject, setSelectedSubject] = useState(null);
 
     useEffect(() => {
         const fetchClips = async () => {
@@ -70,6 +71,12 @@ function MyClips() {
         fetchClips();
     }, []);
 
+    useEffect(() => {
+        if (Object.keys(clips).length > 0 && !selectedSubject) {
+            setSelectedSubject(Object.keys(clips)[0]);
+        }
+    }, [clips, selectedSubject]);
+
     if (loading) {
         return (
             <div className="my-clips">
@@ -85,28 +92,50 @@ function MyClips() {
 
     return (
         <div className="my-clips">
-            <h1>My Clips</h1>
-            <Link to="/">
-                <button>Back to Home</button>
-            </Link>
-            {Object.keys(clips).length === 0 ? (
+            <header className="my-clips-header">
+                <h1>My Clips</h1>
+                <Link to="/home" className="back-button">
+                    Back to Home
+                </Link>
+            </header>
+
+            {loading ? (
+                <div className="loading-spinner"></div>
+            ) : error ? (
+                <p className="error-message">Error: {error}</p>
+            ) : Object.keys(clips).length === 0 ? (
                 <p className="no-clips-message">No clips found. Start recording to create some!</p>
             ) : (
-                Object.keys(clips).map(subject => (
-                    <div key={subject} className="subject-section">
-                        <h2>{subject}</h2>
-                        <div className="clips-container">
-                            {clips[subject].map((clip) => (
-                                <div key={clip.id} className="clip-item">
-                                    <h3 className="clip-gist">{clip.gist}</h3>
-                                    <audio className="audio-player" controls src={clip.linkToClip}></audio>
-                                    <p className="clip-headline"><strong>Headline:</strong> {clip.headline}</p>
-                                    <p className="clip-summary"><strong>Summary:</strong> {clip.summary}</p>
-                                </div>
-                            ))}
-                        </div>
+                <div className="clips-content">
+                    <div className="subject-buttons">
+                        {Object.keys(clips).map(subject => (
+                            <button
+                                key={subject}
+                                className={`subject-button ${selectedSubject === subject ? 'active' : ''}`}
+                                onClick={() => setSelectedSubject(subject)}
+                            >
+                                {subject}
+                            </button>
+                        ))}
                     </div>
-                ))
+                    {selectedSubject && (
+                        <div className="subject-section">
+                            <h2>{selectedSubject}</h2>
+                            <div className="clips-container">
+                                {clips[selectedSubject].map((clip) => (
+                                    <div key={clip.id} className="clip-item">
+                                        <h3 className="clip-gist">{clip.gist}</h3>
+                                        <audio className="audio-player" controls src={clip.linkToClip}></audio>
+                                        <div className="clip-details">
+                                            <p className="clip-headline"><span>Headline:</span> {clip.headline}</p>
+                                            <p className="clip-summary"><span>Summary:</span> {clip.summary}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
             )}
         </div>
     );
