@@ -1,12 +1,23 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { db } from './firebaseConfig';
 import { collection, addDoc } from 'firebase/firestore';
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import './LandingPage.css';
 
-const LandingPage = ({ user }) => {
+const LandingPage = ({ user: propUser }) => {
     const [email, setEmail] = useState('');
     const [message, setMessage] = useState('');
+    const [user, setUser] = useState(propUser);
+
+    useEffect(() => {
+        const auth = getAuth();
+        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+            setUser(currentUser);
+        });
+
+        return () => unsubscribe();
+    }, []);
 
     const scrollToTop = () => {
         window.scrollTo({ top: 0, behavior: 'smooth' });

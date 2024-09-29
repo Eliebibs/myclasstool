@@ -19,6 +19,7 @@ const ASSEMBLYAI_API_KEY = 'ae928180e355400cb40b89e3c69e3680';
 function App() {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [initialRedirectDone, setInitialRedirectDone] = useState(false);
     // State to track if recording is in progress
     const [isRecording, setIsRecording] = useState(false);
     // State to store the URL of the recorded audio
@@ -62,10 +63,11 @@ function App() {
         const location = useLocation();
         
         useEffect(() => {
-            if (user && location.pathname === '/') {
+            if (user && location.pathname === '/' && !initialRedirectDone) {
                 window.history.replaceState(null, '', '/home');
+                setInitialRedirectDone(true);
             }
-        }, [user, location]);
+        }, [user, location, initialRedirectDone]);
 
         return null;
     };
@@ -342,7 +344,7 @@ function App() {
         <Router>
             <AuthRedirect />
             <Routes>
-                <Route path="/" element={user ? <Navigate to="/home" /> : <LandingPage />} />
+                <Route path="/" element={<LandingPage user={user} />} />
                 <Route path="/login" element={user ? <Navigate to="/home" /> : <LoginSignup />} />
                 <Route path="/signup" element={user ? <Navigate to="/home" /> : <Signup />} />
                 <Route path="/home" element={
